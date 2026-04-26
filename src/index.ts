@@ -300,6 +300,12 @@ export class FastlaneClient {
       data: { postIds },
     });
 
+  deletePost = (postId: string) =>
+    this.request<{ deleted: boolean; postId: string }>({
+      method: "DELETE",
+      url: `/posts/${postId}`,
+    });
+
   getPostAnalytics = (postIds: string[]) =>
     this.request<AnalyticsPostsResponse>({
       method: "POST",
