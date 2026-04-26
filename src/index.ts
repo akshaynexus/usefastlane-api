@@ -27,6 +27,7 @@ import {
   type ListResponse,
   type PostMetrics,
   type FastlaneError,
+  type FastlaneErrorCode,
   FastlaneApiError,
   unwrapError,
 } from "./types";
@@ -58,34 +59,101 @@ export {
   type ListResponse,
   type PostMetrics,
   type FastlaneError,
+  type FastlaneErrorCode,
   FastlaneApiError,
 };
 
 const DEFAULT_BASE_URL = "https://api.usefastlane.ai/api/v1";
+const RATE_LIMIT_TOKENS = 20;
+const RATE_LIMIT_WINDOW_MS = 60000;
+
+interface RateLimiterOptions {
+  maxTokens?: number;
+  refillRate?: number;
+}
+
+class TokenBucketRateLimiter {
+  private tokens: number;
+  private lastRefill: number;
+  private readonly maxTokens: number;
+  private readonly refillRate: number;
+
+  constructor(options: RateLimiterOptions = {}) {
+    this.maxTokens = options.maxTokens ?? RATE_LIMIT_TOKENS;
+    this.refillRate = options.refillRate ?? RATE_LIMIT_WINDOW_MS;
+    this.tokens = this.maxTokens;
+    this.lastRefill = Date.now();
+  }
+
+  private refill(): void {
+    const now = Date.now();
+    const elapsed = now - this.lastRefill;
+    const tokensToAdd = Math.floor((elapsed / this.refillRate) * this.maxTokens);
+    if (tokensToAdd > 0) {
+      this.tokens = Math.min(this.maxTokens, this.tokens + tokensToAdd);
+      this.lastRefill = now;
+    }
+  }
+
+  async acquire(tokenCost = 1): Promise<void> {
+    this.refill();
+    
+    if (this.tokens >= tokenCost) {
+      this.tokens -= tokenCost;
+      return;
+    }
+
+    const waitTime = Math.ceil(((tokenCost - this.tokens) / this.maxTokens) * this.refillRate);
+    await new Promise((resolve) => setTimeout(resolve, waitTime));
+    this.refill();
+    this.tokens -= tokenCost;
+  }
+
+  get availableTokens(): number {
+    this.refill();
+    return Math.floor(this.tokens);
+  }
+
+  get retryAfterMs(): number {
+    if (this.tokens >= 1) return 0;
+    return Math.ceil(((1 - this.tokens) / this.maxTokens) * this.refillRate);
+  }
+}
 
 export type FastlaneClientOptions = {
   apiKey: string;
   baseURL?: string;
   axiosInstance?: AxiosInstance;
+  rateLimiter?: RateLimiterOptions;
+  onRateLimited?: (retryAfterMs: number) => void;
 };
 
 export class FastlaneClient {
   private client: AxiosInstance;
+  private rateLimiter: TokenBucketRateLimiter;
+  private onRateLimited?: (retryAfterMs: number) => void;
 
   constructor(options: FastlaneClientOptions);
   constructor(apiKey: string, axiosInstance?: AxiosInstance);
   constructor(optionsOrApiKey: FastlaneClientOptions | string, axiosInstance?: AxiosInstance) {
     let apiKey: string;
     let baseURL: string;
+    let rateLimitOptions: RateLimiterOptions | undefined;
+    let onRateLimited: ((retryAfterMs: number) => void) | undefined;
     
     if (typeof optionsOrApiKey === "object" && "apiKey" in optionsOrApiKey) {
       apiKey = optionsOrApiKey.apiKey;
       baseURL = optionsOrApiKey.baseURL ?? DEFAULT_BASE_URL;
       axiosInstance = optionsOrApiKey.axiosInstance;
+      rateLimitOptions = optionsOrApiKey.rateLimiter;
+      onRateLimited = optionsOrApiKey.onRateLimited;
     } else {
       apiKey = optionsOrApiKey;
       baseURL = DEFAULT_BASE_URL;
     }
+    
+    this.rateLimiter = new TokenBucketRateLimiter(rateLimitOptions);
+    this.onRateLimited = onRateLimited;
     
     this.client =
       axiosInstance ??
@@ -100,9 +168,20 @@ export class FastlaneClient {
   }
 
   private async request<T>(config: AxiosRequestConfig): Promise<T> {
+    await this.rateLimiter.acquire();
+    
     try {
       const response = await this.client.request<ApiResponse<T>>(config);
       const { status, data } = response;
+
+      if (status === 429) {
+        const retryAfterMs = this.rateLimiter.retryAfterMs;
+        if (this.onRateLimited) {
+          this.onRateLimited(retryAfterMs);
+        }
+        await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+        return this.request<T>(config);
+      }
 
       if (status >= 400 || data.error) {
         throw unwrapError(data, `HTTP ${status}`, status);
@@ -227,6 +306,13 @@ export class FastlaneClient {
       url: "/analytics/posts",
       data: { postIds },
     });
+
+  getRateLimitStatus() {
+    return {
+      availableTokens: this.rateLimiter.availableTokens,
+      retryAfterMs: this.rateLimiter.retryAfterMs,
+    };
+  }
 }
 
 export default FastlaneClient;

@@ -133,10 +133,21 @@ export interface AnalyticsPostsResponse {
 }
 
 export interface FastlaneError {
-  code: string;
+  code: FastlaneErrorCode;
   message: string;
   details?: Record<string, unknown>;
 }
+
+export type FastlaneErrorCode =
+  | "request_failed"
+  | "rate_limited"
+  | "blitz_quota_exceeded"
+  | "tiktok_post_limit_exceeded"
+  | "youtube_post_limit_exceeded"
+  | "instagram_post_limit_exceeded"
+  | "unauthorized"
+  | "not_found"
+  | "validation_error";
 
 export interface ApiResponse<T> {
   data: T;
