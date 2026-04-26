@@ -1,16 +1,40 @@
 {
   "name": "usefastlane-api",
-  "module": "index.ts",
+  "version": "1.0.0",
+  "description": "TypeScript SDK for Fastlane AI content generation API",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
   "type": "module",
-  "private": true,
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
     "@types/bun": "latest",
-    "axios-mock-adapter": "^2.1.0"
+    "axios-mock-adapter": "^2.1.0",
+    "typescript": "^5"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
     "axios": "^1.15.2"
-  }
+  },
+  "keywords": [
+    "fastlane",
+    "ai",
+    "content-generation",
+    "api",
+    "sdk"
+  ],
+  "author": "",
+  "license": "MIT"
 }
