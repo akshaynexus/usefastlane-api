@@ -61,16 +61,36 @@ export {
   FastlaneApiError,
 };
 
-const BASE_URL = "https://api.usefastlane.ai/api/v1";
+const DEFAULT_BASE_URL = "https://api.usefastlane.ai/api/v1";
+
+export type FastlaneClientOptions = {
+  apiKey: string;
+  baseURL?: string;
+  axiosInstance?: AxiosInstance;
+};
 
 export class FastlaneClient {
   private client: AxiosInstance;
 
-  constructor(apiKey: string, axiosInstance?: AxiosInstance) {
+  constructor(options: FastlaneClientOptions);
+  constructor(apiKey: string, axiosInstance?: AxiosInstance);
+  constructor(optionsOrApiKey: FastlaneClientOptions | string, axiosInstance?: AxiosInstance) {
+    let apiKey: string;
+    let baseURL: string;
+    
+    if (typeof optionsOrApiKey === "object" && "apiKey" in optionsOrApiKey) {
+      apiKey = optionsOrApiKey.apiKey;
+      baseURL = optionsOrApiKey.baseURL ?? DEFAULT_BASE_URL;
+      axiosInstance = optionsOrApiKey.axiosInstance;
+    } else {
+      apiKey = optionsOrApiKey;
+      baseURL = DEFAULT_BASE_URL;
+    }
+    
     this.client =
       axiosInstance ??
       axios.create({
-        baseURL: BASE_URL,
+        baseURL,
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
